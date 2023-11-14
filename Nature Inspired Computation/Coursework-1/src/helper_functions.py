@@ -30,12 +30,6 @@ class CrossoverType(Enum):
     ORDERED = 2
 
 
-class ReplacementType(Enum):
-    """Enum class used to select which replacement operator to use."""
-    WEAKEST = 0
-    FIRST_WEAKEST = 1
-
-
 def load_cities_from_xml(xml_file_path: str) -> ET.Element:
     """Loads an `ET.Element` from an xml file using a specified file path."""
     tree = ET.parse(xml_file_path)
@@ -240,8 +234,16 @@ def mutate(c: Individual, d: Individual, operator: MutationType, num_points: int
     return [mutation_c_gene_data, mutation_d_gene_data]
 
 
-def replace(e: Individual, f: Individual, operator: ReplacementType) -> list:
-    pass
+def replace_weakest_two(population: list, e: Individual, f: Individual) -> list:
+    """Searches the entire population for the two weakest individuals and replaces them with `Individuals` `e` and `f`."""
+    # Sort population by rank in ascending order (lowest-highest) and store their indices
+    worst_indices = sorted(range(len(population)), key=lambda individual: population[individual].rank)[:2]
+
+    # Replacing weakest/worst individuals at specified indices with `e` and `f`
+    population[worst_indices[0]] = e
+    population[worst_indices[1]] = f
+
+    return population
 
 
 def evolutionary_algorithm(population_size: int, tournament_size: int, crossover_operator: CrossoverType, mutation_operator: MutationType):
@@ -261,56 +263,55 @@ def evolutionary_algorithm(population_size: int, tournament_size: int, crossover
 
         population.append(Individual(gene_data, fitness, rank))
 
-    # Step 2 - Running tournament selection twice for a given tournament size on the population
-    parent_a = tournament_selection(population, tournament_size)
-    parent_b = tournament_selection(population, tournament_size)
+    i = 0
+    MAX_FITNESS_EVALUATIONS = 10_000
+    while i < MAX_FITNESS_EVALUATIONS:
+        # Step 2 - Running tournament selection twice for a given tournament size on the population
+        parent_a = tournament_selection(population, tournament_size)
+        parent_b = tournament_selection(population, tournament_size)
 
-    print(f"Parent_a:\n\t{parent_a}")
-    print(f"Parent_b:\n\t{parent_b}")
+        # Step 3 - Generating children C and D from parents A and B using single-point crossover
+        children = single_point_crossover(parent_a, parent_b, crossover_operator)
 
-    # Step 3 - Generating children C and D from parents A and B using single-point crossover
-    children = single_point_crossover(parent_a, parent_b, crossover_operator)
+        # Recalculating individuals after performing single_point_crossover
+        child_c_genes = children[0]
+        child_c_fitness = calculate_total_cost(
+            calculate_route_costs(child_c_genes, cities))
+        child_c_rank = assess_generation_fitness(child_c_fitness)
 
-    # Recalculating individuals after performing single_point_crossover
-    child_c_genes = children[0]
-    child_c_fitness = calculate_total_cost(
-        calculate_route_costs(child_c_genes, cities))
-    child_c_rank = assess_generation_fitness(child_c_fitness)
+        child_c = Individual(child_c_genes, child_c_fitness, child_c_rank)
 
-    child_c = Individual(child_c_genes, child_c_fitness, child_c_rank)
+        child_d_genes = children[1]
+        child_d_fitness = calculate_total_cost(
+            calculate_route_costs(child_d_genes, cities))
+        child_d_rank = assess_generation_fitness(child_d_fitness)
 
-    child_d_genes = children[1]
-    child_d_fitness = calculate_total_cost(
-        calculate_route_costs(child_d_genes, cities))
-    child_d_rank = assess_generation_fitness(child_d_fitness)
+        child_d = Individual(child_d_genes, child_d_fitness, child_d_rank)
 
-    child_d = Individual(child_d_genes, child_d_fitness, child_d_rank)
+        # Step 4 - Running mutations and then assessing fitnesses
+        mutations = mutate(child_c, child_d, mutation_operator)
 
-    print(f"Child_c:\n\t{child_c}")
-    print(f"Child_d:\n\t{child_d}")
+        # Recalculating individuals after performing mutation
+        mutant_e_genes = mutations[0]
+        mutant_e_fitness = calculate_total_cost(
+            calculate_route_costs(mutant_e_genes, cities))
+        mutant_e_rank = assess_generation_fitness(mutant_e_fitness)
 
-    # Step 4 - Running mutations and then assessing fitnesses
-    mutations = mutate(child_c, child_d, mutation_operator)
+        mutant_e = Individual(mutant_e_genes, mutant_e_fitness, mutant_e_rank)
 
-    # Recalculating individuals after performing mutation
-    mutant_e_genes = mutations[0]
-    mutant_e_fitness = calculate_total_cost(
-        calculate_route_costs(mutant_e_genes, cities))
-    mutant_e_rank = assess_generation_fitness(mutant_e_fitness)
+        mutant_f_genes = mutations[1]
+        mutant_f_fitness = calculate_total_cost(
+            calculate_route_costs(mutant_f_genes, cities))
+        mutant_f_rank = assess_generation_fitness(mutant_f_fitness)
 
-    mutant_e = Individual(mutant_e_genes, mutant_e_fitness, mutant_e_rank)
+        mutant_f = Individual(mutant_f_genes, mutant_f_fitness, mutant_f_rank)
 
-    mutant_f_genes = mutations[1]
-    mutant_f_fitness = calculate_total_cost(
-        calculate_route_costs(mutant_f_genes, cities))
-    mutant_f_rank = assess_generation_fitness(mutant_f_fitness)
+        # Step 5 - Running the replacement function on the population with the newly generated solutions
+        new_population = replace_weakest_two(population, mutant_e, mutant_f)
+        print(f"Best solution: {max(new_population, key=lambda individual: individual.rank)}")
 
-    mutant_f = Individual(mutant_f_genes, mutant_f_fitness, mutant_f_rank)
-
-    print(f"Mutant_e:\n\t{mutant_e}")
-    print(f"Mutant_f:\n\t{mutant_f}")
-
-    # Step 5 - Running the replacement function on the mutants
+        i += 1
+    
 
 
 evolutionary_algorithm(50, 5, CrossoverType.SIMPLE, MutationType.SINGLE_SWAP)
